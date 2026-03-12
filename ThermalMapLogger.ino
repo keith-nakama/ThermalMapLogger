@@ -464,8 +464,24 @@ void handleDownload() {
 // ============================================================
 void handleDelete() {
   String path = server.arg("file");
-  if(!path.startsWith("/")) path = "/" + path; // 先頭スラッシュを保証
-  SD_MMC.remove(path);                         // ファイル削除 (存在しない場合も無視)
+
+  // 先頭スラッシュを保証
+  if (!path.startsWith("/")) path = "/" + path;
+
+  // .csv拡張子のみ許可
+  if (!path.endsWith(".csv")) {
+    server.send(400, "text/plain", "Bad Request: only .csv files can be deleted");
+    return;
+  }
+
+  // パストラバーサル対策: ルートディレクトリ直下のファイルのみ許可
+  // 2つ目の'/'が存在する場合はサブディレクトリ指定とみなす
+  if (path.indexOf('/', 1) != -1) {
+    server.send(400, "text/plain", "Bad Request: only files in root directory can be deleted");
+    return;
+  }
+
+  SD_MMC.remove(path); // ファイル削除 (存在しない場合も無視)
   server.send(200, "text/plain", "Deleted");
 }
 
