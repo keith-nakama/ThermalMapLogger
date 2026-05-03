@@ -1,1 +1,4 @@
 .claude/
+build/
+build-wokwi/
+build-wokwi-*/

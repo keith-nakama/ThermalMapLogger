@@ -1,0 +1,12 @@
+[wokwi]
+version = 1
+firmware = "build-wokwi/ThermalMapLogger.ino.merged.bin"
+elf = "build-wokwi/ThermalMapLogger.ino.elf"
+
+[[chip]]
+name = "amg8833-sim"
+binary = "amg8833-sim.chip.wasm"
+
+[[net.forward]]
+from = "localhost:8180"
+to = "target:80"

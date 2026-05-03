@@ -1,0 +1,2 @@
+Adafruit AMG88xx Library
+Adafruit BusIO

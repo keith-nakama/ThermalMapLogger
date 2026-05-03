@@ -1,7 +1,7 @@
 /**
  * ============================================================
  *  06_ThermalMapLogger.ino
- *  Thermal Mapper v13.2
+ *  Thermal Mapper v13.4 / Build 134
  * ============================================================
  *
  *  【概要】
@@ -51,6 +51,8 @@
 #include <Adafruit_AMG88xx.h> // AMG8833 サーマルセンサードライバ
 #include "FS.h"             // ファイルシステム基底クラス
 #include "SD_MMC.h"         // SDカード (MMCバス) アクセス
+#include "SD.h"             // Wokwi/予備用 SPI SDカードアクセス
+#include "SPI.h"            // SPI SDカード接続
 #include <time.h>           // time(), localtime_r() などの時刻関数
 #include <sys/time.h>       // gettimeofday(), settimeofday() (マイクロ秒精度)
 
@@ -61,6 +63,13 @@
 // ============================================================
 const char *ssid     = "ESP32-Thermal-Monitor"; // APのSSID
 const char *password = "88888888";              // APのパスワード(8文字以上)
+#ifdef WOKWI_SIMULATION
+const char *wokwiSsid = "Wokwi-GUEST";          // Wokwi仮想Wi-Fi。パスワードなし、ch 6
+#endif
+
+const char *APP_NAME    = "Thermal Mapper";
+const char *APP_VERSION = "v13.4";
+const char *APP_BUILD   = "Build 134";
 
 // ============================================================
 //  AMG8833 センサーオブジェクト
@@ -70,6 +79,7 @@ const char *password = "88888888";              // APのパスワード(8文字�
 Adafruit_AMG88xx amg;
 uint8_t       amg_addr        = 0x68;  // 実際に接続されていたアドレスを保持(デバッグ用)
 bool          sdAvailable     = false; // SDカードが使用可能かどうか
+fs::FS       *storageFs       = &SD_MMC; // 通常はSD_MMC、WokwiではSPI SDにフォールバック
 float         latestPixels[64] = {};   // loop()で更新される最新の温度データ
 unsigned long lastSampleTime   = 0;    // 最後にサンプリングした時刻(ms)
 // settimeofday()がこのESP32ビルドで機能しないため、millis()差分で時刻を自前管理する
@@ -87,6 +97,7 @@ unsigned long g_syncMillis    = 0;    // /sync 受信時のmillis()
 //    /list    → SDカード内CSVファイル一覧
 //    /download→ CSVファイルのダウンロード
 //    /delete  → CSVファイルの削除
+//    /version → アプリ名・バージョン・ビルド番号
 // ============================================================
 WebServer server(80);
 
@@ -98,6 +109,7 @@ WebServer server(80);
 String currentLogFile = "";  // 空文字 = ファイル未作成
 bool isLogging = false;      // false = 停止中、true = 記録中
 File logFile;                // ログファイルを開きっぱなしで保持 (Issue #1対応)
+const int SPI_SD_CS_PIN = 5;  // Wokwi microSD(SPI)用CS。実機SD_MMC成功時は使用しない。
 
 // ============================================================
 //  Web UI (HTML/CSS/JavaScript)
@@ -108,34 +120,57 @@ File logFile;                // ログファイルを開きっぱなしで保持
 //    initApp()   : ページ読み込み時に時刻同期→ファイル一覧取得→0.5秒ごとの
 //                  センサー更新を開始
 //    updateData(): /data にアクセスして64画素取得→8x8グリッドに描画
-//    getHeatColor(): 温度値をRGB色に変換 (20°C=青系、40°C以上=赤系)
+//    getHeatColor(): 温度値をRGB色に変換 (0°C=青系、80°C以上=赤系)
 //    toggleLogging(): /toggle を叩いてロギングON/OFFを切り替え
 //    updateList(): /list からCSVファイル一覧を取得して表示
 //    deleteFile(): /delete を叩いてファイル削除後に一覧を更新
 // ============================================================
 const char INDEX_HTML[] PROGMEM = R"=====(
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thermal Mapper v13.2</title>
+<title>Thermal Mapper v13.4 - Build 134</title>
 <style>
-  body { font-family: sans-serif; text-align: center; background: #121212; color: #eee; margin:0; padding:10px; }
-  /* 8x8グリッド: vw単位でスマホでも全画面表示 */
-  #grid { display: grid; grid-template-columns: repeat(8, 1fr); width: 95vw; height: 95vw; max-width: 450px; margin: 10px auto; gap: 1px; background: #333; }
+  body { font-family: sans-serif; text-align: center; background: #121212; color: #eee; margin:0; padding:8px; }
+  h3 { color: #4db6ac; margin: 4px 0 8px; }
+  .app-meta { display: flex; justify-content: center; align-items: center; gap: 8px; color: #aaa; font-size: 12px; margin-bottom: 6px; }
+  /* 8x8グリッド: 横幅と高さの小さい方に合わせ、Wokwi/スマホ画面内に収める */
+  #grid { display: grid; grid-template-columns: repeat(8, 1fr); width: min(92vw, 56vh, 450px); height: min(92vw, 56vh, 450px); margin: 6px auto; gap: 1px; background: #333; }
   .cell { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
-  .controls { margin: 20px 0; }
-  button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+  .controls { margin: 10px 0 6px; }
+  button { padding: 12px 24px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
   #logBtn { background: #00897b; color: white; }
-  #fileList { margin-top: 30px; text-align: left; max-width: 480px; margin-left: auto; margin-right: auto; background: #222; padding: 15px; border-radius: 10px; }
-  .file-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #333; }
+  #status { color: #888; min-height: 1.2em; }
+  #fileList { margin-top: 10px; text-align: left; max-width: 480px; margin-left: auto; margin-right: auto; background: #222; padding: 10px; border-radius: 8px; max-height: 22vh; overflow-y: auto; }
+  #fileList h4 { margin: 0 0 6px; }
+  .file-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid #333; }
+  .file-item a { overflow-wrap: anywhere; }
   a { color: #8bc34a; text-decoration: none; font-family: monospace; }
-  .del-btn { background: #444; color: #ff5252; padding: 5px 10px; border: none; border-radius: 4px; }
+  .del-btn { background: #444; color: #ff5252; padding: 5px 10px; border: none; border-radius: 4px; font-size: 12px; }
+  #aboutBtn { background: #333; color: #ddd; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+  #aboutDialog { border: 1px solid #444; border-radius: 8px; background: #1b1b1b; color: #eee; padding: 14px; min-width: min(84vw, 320px); }
+  #aboutDialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+  #aboutDialog h4 { margin: 0 0 10px; color: #4db6ac; }
+  #aboutDialog dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; text-align: left; margin: 0 0 12px; }
+  #aboutDialog dt { color: #aaa; }
+  #aboutDialog dd { margin: 0; font-family: monospace; }
+  #aboutDialog button { background: #00897b; color: white; padding: 8px 14px; border-radius: 6px; font-size: 14px; }
 </style>
 </head>
 <body onload="initApp()">
-  <h3 style="color: #4db6ac;">Thermal Mapper [Grid: 11-88]</h3>
+  <h3>Thermal Mapper [Grid: 11-88] 134</h3>
+  <div class="app-meta"><span>v13.4 / Build 134</span><button id="aboutBtn" onclick="showAbout()">About</button></div>
   <div id="grid"></div>
   <div class="controls"><button id="logBtn" onclick="toggleLogging()">Start Logging</button></div>
-  <div id="status" style="color: #888;">Syncing Time...</div>
+  <div id="status">Syncing Time...</div>
   <div id="fileList"><h4>Saved Logs</h4><div id="listContent"></div></div>
+  <dialog id="aboutDialog">
+    <h4>Thermal Mapper</h4>
+    <dl>
+      <dt>Version</dt><dd>v13.4</dd>
+      <dt>Build</dt><dd>Build 134</dd>
+      <dt>HTTP</dt><dd>/version</dd>
+    </dl>
+    <button onclick="closeAbout()">Close</button>
+  </dialog>
 <script>
   /**
    * 温度値をヒートマップ色(RGB)に変換する
@@ -143,14 +178,16 @@ const char INDEX_HTML[] PROGMEM = R"=====(
    * @returns {string} CSS rgb()文字列
    *
    * 色のマッピング例:
-   *   20°C以下 → r=0,   b=255 (青)
-   *   30°C     → r=120, b=120 (紫)
-   *   40°C以上 → r=255, b=0   (赤)
+   *   0°C以下  → 青
+   *   40°C     → 中間色
+   *   80°C以上 → 赤
    */
   function getHeatColor(t) {
-    let r = Math.max(0, Math.min(255, (t - 20) * 12)); // 20°Cから上昇で赤成分を増加
-    let b = Math.max(0, Math.min(255, (40 - t) * 12)); // 40°Cから低下で青成分を増加
-    return `rgb(${r}, 50, ${b})`;
+    const ratio = Math.max(0, Math.min(1, t / 80));
+    const r = Math.round(ratio * 255);
+    const g = Math.round(80 - Math.abs(ratio - 0.5) * 80);
+    const b = Math.round((1 - ratio) * 255);
+    return `rgb(${r}, ${g}, ${b})`;
   }
 
   /**
@@ -233,6 +270,14 @@ const char INDEX_HTML[] PROGMEM = R"=====(
       updateList(); // 削除後に一覧を再取得
     }
   }
+
+  function showAbout() {
+    document.getElementById('aboutDialog').showModal();
+  }
+
+  function closeAbout() {
+    document.getElementById('aboutDialog').close();
+  }
 </script></body></html>
 )=====";
 
@@ -299,7 +344,7 @@ void saveToSD(float* pixels) {
   if (++flushCount >= 120) {
     flushCount = 0;
     logFile.close();
-    logFile = SD_MMC.open(currentLogFile, FILE_APPEND);
+    logFile = storageFs->open(currentLogFile.c_str(), FILE_APPEND);
     if (!logFile) {
       // 再openに失敗した場合はロギングを安全停止
       isLogging = false;
@@ -376,6 +421,13 @@ void handleToggle() {
   isLogging = !isLogging; // フラグを反転
 
   if(isLogging) {
+    // SDカードが使えない場合はロギングを開始しない
+    if (!sdAvailable) {
+      isLogging = false;
+      server.send(503, "text/plain", "SD not available");
+      return;
+    }
+
     // 時刻未同期チェック: /sync が届いていない場合は1970年になるため拒否
     if (!g_timeSynced) {
       isLogging = false;
@@ -395,7 +447,7 @@ void handleToggle() {
     currentLogFile = String(buf);
 
     // 新規ファイルを書き込みモードで作成し、グローバル変数logFileに保持
-    logFile = SD_MMC.open(currentLogFile, FILE_WRITE);
+    logFile = storageFs->open(currentLogFile.c_str(), FILE_WRITE);
     if(logFile) {
       // UTF-8 BOM (0xEF 0xBB 0xBF) を先頭に書き込む
       // ExcelでCSVを開いたとき日本語が文字化けしないために必要
@@ -438,7 +490,7 @@ void handleToggle() {
 // ============================================================
 void handleList() {
   String json = "[";
-  File root = SD_MMC.open("/");          // ルートディレクトリを開く
+  File root = storageFs->open("/");      // ルートディレクトリを開く
   File file = root.openNextFile();        // 最初のファイルを取得
   while(file) {
     // ディレクトリを除外し、.csv ファイルのみを対象にする
@@ -468,8 +520,8 @@ void handleDownload() {
   String path = server.arg("file");
   if(!path.startsWith("/")) path = "/" + path; // 先頭スラッシュを保証
 
-  if(SD_MMC.exists(path)) {
-    File file = SD_MMC.open(path, FILE_READ);
+  if(storageFs->exists(path.c_str())) {
+    File file = storageFs->open(path.c_str(), FILE_READ);
     // Content-Disposition: attachment でダウンロードとして扱う
     server.sendHeader("Content-Disposition", "attachment; filename=\"" + path.substring(1) + "\"");
     server.streamFile(file, "application/octet-stream"); // バイナリストリームで送信
@@ -506,15 +558,65 @@ void handleDelete() {
     return;
   }
 
-  SD_MMC.remove(path); // ファイル削除 (存在しない場合も無視)
+  storageFs->remove(path.c_str()); // ファイル削除 (存在しない場合も無視)
   server.send(200, "text/plain", "Deleted");
 }
+
+// ============================================================
+//  アプリ情報の返却
+//  Web UIの表示と同じバージョン/ビルド番号をJSONで返す。
+// ============================================================
+void handleVersion() {
+  String json = "{";
+  json += "\"name\":\"" + String(APP_NAME) + "\",";
+  json += "\"version\":\"" + String(APP_VERSION) + "\",";
+  json += "\"build\":\"" + String(APP_BUILD) + "\"";
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
+#ifdef WOKWI_SIMULATION
+float int12ToFloat(uint16_t val) {
+  val &= 0x0fff;
+  return (val & 0x0800) ? -1.0f * (float)(val & 0x07ff) : (float)val;
+}
+
+bool readWokwiPixels(float *pixels) {
+  uint8_t raw[128];
+  const uint8_t chunkSize = 16;
+
+  for (uint8_t offset = 0; offset < sizeof(raw); offset += chunkSize) {
+    Wire.beginTransmission(amg_addr);
+    Wire.write(0x80 + offset);
+    if (Wire.endTransmission(false) != 0) {
+      return false;
+    }
+
+    uint8_t received = Wire.requestFrom(amg_addr, chunkSize);
+    if (received != chunkSize) {
+      return false;
+    }
+
+    for (uint8_t i = 0; i < chunkSize; i++) {
+      raw[offset + i] = Wire.read();
+    }
+  }
+
+  for (uint8_t i = 0; i < 64; i++) {
+    uint8_t pos = i << 1;
+    uint16_t recast = ((uint16_t)raw[pos + 1] << 8) | raw[pos];
+    pixels[i] = int12ToFloat(recast) * 0.25f;
+  }
+  return true;
+}
+#endif
 
 // ============================================================
 //  セットアップ (起動時に1度だけ実行)
 // ============================================================
 void setup() {
   Serial.begin(115200); // シリアルモニタ: 115200bps
+  Serial.println("ThermalMapLogger booting...");
 
   // I2C初期化: SDA=GPIO21, SCL=GPIO22 (ESP32デフォルトピン)
   Wire.begin(21, 22);
@@ -571,6 +673,7 @@ void setup() {
     for (int attempt = 1; attempt <= SD_MAX_RETRY; attempt++) {
       Serial.printf("SD: Initializing... (attempt %d/%d)\n", attempt, SD_MAX_RETRY);
       if (SD_MMC.begin("/sdcard", true)) {
+        storageFs = &SD_MMC;
         sdAvailable = true;
         Serial.println("SD: Initialized successfully.");
         break;
@@ -581,7 +684,15 @@ void setup() {
       }
     }
     if (!sdAvailable) {
-      Serial.println("SD not available. Logging disabled.");
+      Serial.println("SD_MMC not available. Trying SPI SD fallback...");
+      SPI.begin(18, 19, 23, SPI_SD_CS_PIN);
+      if (SD.begin(SPI_SD_CS_PIN)) {
+        storageFs = &SD;
+        sdAvailable = true;
+        Serial.println("SPI SD: Initialized successfully.");
+      } else {
+        Serial.println("SD not available. Logging disabled.");
+      }
     }
   }
 
@@ -590,7 +701,26 @@ void setup() {
   //  ESP32がAPとして動作し、外部ルーター不要でスタンドアロン動作
   //  接続後のESP32のIPアドレス: 192.168.4.1 (AP固定)
   // -------------------------------------------------------
+#ifdef WOKWI_SIMULATION
+  // Wokwiのnet.forwardはSTA接続が前提のため、Wokwi用ビルドだけ仮想Wi-Fiへ接続する。
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(wokwiSsid, "", 6);
+  Serial.print("Wokwi WiFi: Connecting to Wokwi-GUEST");
+  unsigned long wifiStart = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 10000) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println();
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Wokwi WiFi: Connected. IP address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("Wokwi WiFi: Connection timed out. localhost forwarding may be unavailable.");
+  }
+#else
   WiFi.softAP(ssid, password);
+#endif
 
   // -------------------------------------------------------
   //  HTTPルーティング登録
@@ -603,9 +733,14 @@ void setup() {
   server.on("/list",    handleList);     // ファイル一覧
   server.on("/download",handleDownload); // ファイルダウンロード
   server.on("/delete",  handleDelete);   // ファイル削除
+  server.on("/version", handleVersion);  // バージョン確認
 
   server.begin();
+#ifdef WOKWI_SIMULATION
+  Serial.println("HTTP server started. Connect to: http://localhost:8180");
+#else
   Serial.println("HTTP server started. Connect to: http://192.168.4.1");
+#endif
 }
 
 // ============================================================
@@ -618,7 +753,13 @@ void loop() {
   unsigned long now = millis();
   if (now - lastSampleTime >= 500) {
     lastSampleTime = now;
+#ifdef WOKWI_SIMULATION
+    if (!readWokwiPixels(latestPixels)) {
+      amg.readPixels(latestPixels); // Wokwi直接読みが失敗した場合のみライブラリ経由へ戻す
+    }
+#else
     amg.readPixels(latestPixels); // センサーから64画素を取得してグローバルに保持
+#endif
     saveToSD(latestPixels);       // ロギング中ならSDに記録
   }
   server.handleClient(); // クライアントからのHTTPリクエストを処理

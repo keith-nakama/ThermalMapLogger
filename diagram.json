@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "author": "nakama",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "chip-amg8833-sim",
+      "id": "amg",
+      "top": -20,
+      "left": 260,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-microsd-card",
+      "id": "sd",
+      "top": 190,
+      "left": 260,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    ["esp:TX", "$serialMonitor:RX", "", []],
+    ["esp:RX", "$serialMonitor:TX", "", []],
+
+    ["esp:3V3", "amg:VCC", "red", []],
+    ["esp:GND.1", "amg:GND", "black", []],
+    ["esp:22", "amg:SCL", "green", []],
+    ["esp:21", "amg:SDA", "blue", []],
+
+    ["esp:3V3", "sd:VCC", "red", []],
+    ["esp:GND.2", "sd:GND", "black", []],
+    ["esp:18", "sd:SCK", "green", []],
+    ["esp:19", "sd:DO", "blue", []],
+    ["esp:23", "sd:DI", "orange", []],
+    ["esp:5", "sd:CS", "purple", []]
+  ],
+  "serialMonitor": {
+    "display": "terminal",
+    "newline": "lf"
+  }
+}

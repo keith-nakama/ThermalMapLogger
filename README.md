@@ -87,11 +87,69 @@ http://192.168.4.1
 
 ---
 
+## Wokwiシミュレーション
+
+リポジトリ直下の `diagram.json` と `libraries.txt` を使うと、Wokwi 上で ESP32、AMG8833相当のI2Cカスタムチップ、microSDカードを含む構成を開けます。
+
+### Web版Wokwi
+
+1. https://wokwi.com/ で新規 ESP32 プロジェクトを作成、または GitHub 連携でこのリポジトリを開きます
+2. `diagram.json`、`libraries.txt`、`amg8833-sim.chip.json`、`amg8833-sim.chip.c` をプロジェクトに含めます
+3. シリアルモニタで `HTTP server started. Connect to: http://192.168.4.1` が出ることを確認します
+
+### VS Code版Wokwi
+
+VS Code では `Wokwi Embedded Simulator` 拡張を使います。拡張 ID は `wokwi.wokwi-vscode` です。
+
+1. VS Code の拡張機能で `Wokwi Embedded Simulator` をインストールします
+2. コマンドパレットから `Wokwi: Request a new License` を実行してライセンスを有効化します
+3. Arduino CLI などで `WOKWI_SIMULATION` を有効にした `build-wokwi/ThermalMapLogger.ino.merged.bin` と `build-wokwi/ThermalMapLogger.ino.elf` を生成します
+4. `diagram.json` を開いた状態で、画面内の緑色の再生ボタンではなく、コマンドパレットから `Wokwi: Start Simulator` を実行します
+5. `Wokwi Terminal` で `ThermalMapLogger booting...`、`Wokwi WiFi: Connected.`、`HTTP server started. Connect to: http://localhost:8180` が出ることを確認します
+6. PC のブラウザで `http://localhost:8180` を開きます
+
+Arduino CLI で生成する場合は、以下をリポジトリ直下で実行します。
+
+```powershell
+arduino-cli compile --clean --fqbn esp32:esp32:esp32 --build-property compiler.cpp.extra_flags=-DWOKWI_SIMULATION --output-dir build-wokwi .
+```
+
+AMG8833相当のカスタムチップを更新した場合は、Wokwi CLI で WASM を再生成します。
+
+```powershell
+wokwi-cli chip compile amg8833-sim.chip.c -o amg8833-sim.chip.wasm
+```
+
+このリポジトリでは VS Code 版 Wokwi 用に `wokwi.toml` を追加し、`firmware` に `build-wokwi/ThermalMapLogger.ino.merged.bin`、`elf` に `build-wokwi/ThermalMapLogger.ino.elf` を指定しています。`build-wokwi/` は生成物のため Git 管理外です。ESP32 の Web UI は Wokwi 起動後に `http://localhost:8180` へ転送されます。シリアル出力は VS Code の `PORT` 設定ではなく、Wokwi 拡張が作成する `Wokwi Terminal` に表示されます。
+Wokwi の `net.forward` は ESP32 が `Wokwi-GUEST` へ STA 接続した後に有効になります。実機ビルドでは SoftAP の `ESP32-Thermal-Monitor` を使い、Wokwi 用ビルドでは `WOKWI_SIMULATION` により `Wokwi-GUEST` へ接続します。
+`Wokwi Terminal` に何も出ない場合は、`diagram.json` の `connections` に `esp:TX` から `$serialMonitor:RX`、`esp:RX` から `$serialMonitor:TX` への接続があることを確認してください。
+
+実機では SD_MMC を優先します。Wokwi の microSD は SPI 接続のため、SD_MMC 初期化に失敗した場合だけ GPIO18/19/23/5 の SPI SD にフォールバックします。
+ブラウザから ESP32 内の HTTP サーバーへ接続する確認には、Wokwi IoT Gateway が必要になる場合があります。
+
+---
+
 ## 使い方
 
 ### リアルタイム表示
 
 接続後、自動的に8×8のヒートマップが0.5秒ごとに更新されます。温度が低いほど青、高いほど赤で表示されます。
+
+### バージョン確認
+
+画面上部のアプリタイトル右側に `134`、その下に `v13.4 / Build 134` が表示されます。`About` ボタンでも同じバージョンとビルド番号を確認できます。
+
+ブラウザまたは `curl` で以下にアクセスすると、JSONでも確認できます。
+
+```
+http://192.168.4.1/version
+```
+
+Wokwi の VS Code 版で `net.forward` を使っている場合は、以下で確認します。
+
+```
+http://localhost:8180/version
+```
 
 ### CSV記録
 
@@ -131,6 +189,7 @@ datetime, 11, 12, 13, 14, 15, 16, 17, 18, 21, ... , 88
 | `/list` | GET | SDカード内のCSVファイル一覧を返す |
 | `/download` | GET | 指定CSVファイルをダウンロード |
 | `/delete` | GET | 指定CSVファイルを削除 |
+| `/version` | GET | アプリ名・バージョン・ビルド番号をJSONで返す |
 
 ---
 
@@ -138,9 +197,16 @@ datetime, 11, 12, 13, 14, 15, 16, 17, 18, 21, ... , 88
 
 | バージョン | 内容 |
 |-----------|------|
+| v13.4 | バージョン確認表示・About表示・/versionエンドポイントを追加 |
 | v13.3 | バグ修正（Issue #8対応） |
 | v13.2 | バグ修正・安定性改善（Issue #1〜#6 全対応） |
 | v13.1 | 初版リリース |
+
+### v13.4 変更詳細
+
+- 画面上部に `v13.4 / Build 134` を常時表示
+- `About` ボタンでバージョン・ビルド番号・確認用エンドポイントを表示
+- `/version` エンドポイントで `name`、`version`、`build` をJSON返却
 
 ### v13.3 変更詳細
 

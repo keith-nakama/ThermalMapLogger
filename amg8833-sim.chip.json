@@ -1,0 +1,5 @@
+{
+  "name": "AMG8833 Simulator",
+  "author": "nakama",
+  "pins": ["VCC", "GND", "SCL", "SDA"]
+}
