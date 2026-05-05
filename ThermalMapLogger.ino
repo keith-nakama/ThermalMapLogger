@@ -69,7 +69,7 @@ const char *wokwiSsid = "Wokwi-GUEST";          // Wokwi仮想Wi-Fi。パスワ�
 
 const char *APP_NAME    = "Thermal Mapper";
 const char *APP_VERSION = "v13.4";
-const char *APP_BUILD   = "Build 136";
+const char *APP_BUILD   = "Build 137";
 
 // ============================================================
 //  AMG8833 センサーオブジェクト
@@ -561,13 +561,20 @@ void handleDelete() {
   }
 
   // ロギング中のファイル削除を防止 (Issue #9)
-  if (isLogging && path == currentLogFile) {
+  Serial.printf("Delete Request: [%s], Current: [%s], Logging: %s\n", path.c_str(), currentLogFile.c_str(), isLogging ? "Yes" : "No");
+  if (isLogging && path.equalsIgnoreCase(currentLogFile)) {
+    Serial.println("Delete Blocked: file is currently being recorded");
     server.send(409, "text/plain", "Conflict: file is currently being recorded");
     return;
   }
 
-  storageFs->remove(path.c_str()); // ファイル削除 (存在しない場合も無視)
-  server.send(200, "text/plain", "Deleted");
+  if (storageFs->remove(path.c_str())) {
+    Serial.printf("Deleted: %s\n", path.c_str());
+    server.send(200, "text/plain", "Deleted");
+  } else {
+    Serial.printf("Delete Failed: %s\n", path.c_str());
+    server.send(200, "text/plain", "Deleted"); // 存在しない場合も成功扱いにする既存仕様を維持
+  }
 }
 
 // ============================================================
