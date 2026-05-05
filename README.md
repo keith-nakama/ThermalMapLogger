@@ -58,6 +58,26 @@ Arduino IDEのライブラリマネージャーからインストールしてく
 
 ---
 
+## 推奨開発環境
+
+本プロジェクトは、特定のライブラリと ESP32 コアのバージョン依存関係があるため、以下の環境でのビルドを推奨します。
+
+| 項目 | 推奨バージョン | 備考 |
+|------|--------------|------|
+| **ESP32 Core** | **2.0.17** | **3.x 系 (3.3.8等) ではビルドエラーが発生します** |
+| **Adafruit BusIO** | **1.11.0** | コアとの整合性のためのダウングレードを推奨 |
+
+### 既知のビルドエラーと対処法
+ESP32 Core 3.x 系や最新の BusIO を使用した場合、`BitOrder` が未定義である旨のコンパイルエラーが発生することがあります。その場合は `ThermalMapLogger.ino` の先頭（インクルード部）に以下の定義を追加してください：
+
+```cpp
+#ifndef BitOrder
+typedef uint8_t BitOrder;
+#endif
+```
+
+---
+
 ## セットアップ手順
 
 **1. ライブラリをインストール**
@@ -103,7 +123,8 @@ VS Code では `Wokwi Embedded Simulator` 拡張を使います。拡張 ID は 
 
 1. VS Code の拡張機能で `Wokwi Embedded Simulator` をインストールします
 2. コマンドパレットから `Wokwi: Request a new License` を実行してライセンスを有効化します
-3. Arduino CLI などで `WOKWI_SIMULATION` を有効にした `build-wokwi/ThermalMapLogger.ino.merged.bin` と `build-wokwi/ThermalMapLogger.ino.elf` を生成します
+3. Arduino CLI などで `WOKWI_SIMULATION` を有効にした `build-wokwi/ThermalMapLogger.ino.merged.bin` と `build-wokwi/ThermalMapLogger.ino.elf` を生成します。
+   ※推奨環境（Core 2.0.17）以外ではビルドフラグの追加が必要です。
 4. `diagram.json` を開いた状態で、画面内の緑色の再生ボタンではなく、コマンドパレットから `Wokwi: Start Simulator` を実行します
 5. `Wokwi Terminal` で `ThermalMapLogger booting...`、`Wokwi WiFi: Connected.`、`HTTP server started. Connect to: http://localhost:8180` が出ることを確認します
 6. PC のブラウザで `http://localhost:8180` を開きます
@@ -111,7 +132,12 @@ VS Code では `Wokwi Embedded Simulator` 拡張を使います。拡張 ID は 
 Arduino CLI で生成する場合は、以下をリポジトリ直下で実行します。
 
 ```powershell
-arduino-cli compile --clean --fqbn esp32:esp32:esp32 --build-property compiler.cpp.extra_flags=-DWOKWI_SIMULATION --output-dir build-wokwi .
+# 1. コンパイル (BitOrder未定義エラーが発生する場合はビルドプロパティを追加)
+arduino-cli compile --fqbn esp32:esp32:esp32wrover --build-path ./build-wokwi --build-property "compiler.cpp.extra_flags=-DWOKWI_SIMULATION -DBitOrder=uint8_t" --export-binaries .
+
+# 2. バイナリのマージ (Wokwi用の merged.bin を作成)
+# ※ esptool.exe のパスは環境に合わせて読み替えてください
+esptool.exe --chip esp32 merge_bin -o build-wokwi/ThermalMapLogger.ino.merged.bin --flash_mode dio --flash_size 4MB 0x1000 build-wokwi/ThermalMapLogger.ino.bootloader.bin 0x8000 build-wokwi/ThermalMapLogger.ino.partitions.bin 0x10000 build-wokwi/ThermalMapLogger.ino.bin
 ```
 
 AMG8833相当のカスタムチップを更新した場合は、Wokwi CLI で WASM を再生成します。
