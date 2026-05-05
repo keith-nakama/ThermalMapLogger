@@ -79,6 +79,7 @@ classDiagram
     class AppState {
         -bool isLogging
         -String currentLogFile
+        -int flushCount
         -int amg_addr
     }
     

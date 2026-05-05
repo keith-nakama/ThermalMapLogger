@@ -69,7 +69,7 @@ const char *wokwiSsid = "Wokwi-GUEST";          // Wokwi仮想Wi-Fi。パスワ�
 
 const char *APP_NAME    = "Thermal Mapper";
 const char *APP_VERSION = "v13.4";
-const char *APP_BUILD   = "Build 135";
+const char *APP_BUILD   = "Build 136";
 
 // ============================================================
 //  AMG8833 センサーオブジェクト
@@ -108,6 +108,7 @@ WebServer server(80);
 // ============================================================
 String currentLogFile = "";  // 空文字 = ファイル未作成
 bool isLogging = false;      // false = 停止中、true = 記録中
+int flushCount = 0;          // FAT確定用の書き込みカウンタ (Issue #12)
 File logFile;                // ログファイルを開きっぱなしで保持 (Issue #1対応)
 const int SPI_SD_CS_PIN = 5;  // Wokwi microSD(SPI)用CS。実機SD_MMC成功時は使用しない。
 
@@ -340,7 +341,6 @@ void saveToSD(float* pixels) {
   // 1分に1回だけclose→openしてFATテーブルを確定させる
   // 0.5秒ごとに呼ばれるので 120回 = 約60秒
   // 万が一の電源断時にも最大1分分のデータ損失で済むよう保護する
-  static int flushCount = 0;
   if (++flushCount >= 120) {
     flushCount = 0;
     logFile.close();
@@ -445,6 +445,7 @@ void handleToggle() {
     char buf[32];
     strftime(buf, sizeof(buf), "/%Y%m%d_%H%M%S.csv", &ti);
     currentLogFile = String(buf);
+    flushCount = 0; // カウンタリセット (Issue #12)
 
     // 新規ファイルを書き込みモードで作成し、グローバル変数logFileに保持
     logFile = storageFs->open(currentLogFile.c_str(), FILE_WRITE);
