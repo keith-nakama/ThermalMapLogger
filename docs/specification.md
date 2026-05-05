@@ -191,6 +191,6 @@ flowchart TB
 | `/toggle` | GET | ロギングの開始や停止を切り替える |
 | `/list` | GET | SD内のファイル一覧をJSONで返す |
 | `/download` | GET | 指定されたCSVファイルをダウンロード |
-| `/delete` | GET | 指定されたファイルを削除 |
+| `/delete` | GET | 指定されたファイルを削除（ロギング中は拒否） |
 
 ---

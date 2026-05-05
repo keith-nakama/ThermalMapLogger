@@ -69,7 +69,7 @@ const char *wokwiSsid = "Wokwi-GUEST";          // Wokwi仮想Wi-Fi。パスワ�
 
 const char *APP_NAME    = "Thermal Mapper";
 const char *APP_VERSION = "v13.4";
-const char *APP_BUILD   = "Build 134";
+const char *APP_BUILD   = "Build 135";
 
 // ============================================================
 //  AMG8833 センサーオブジェクト
@@ -474,6 +474,7 @@ void handleToggle() {
     if(logFile) {
       logFile.close();
     }
+    currentLogFile = "";
   }
 
   // ロギング状態を文字列で返す
@@ -555,6 +556,12 @@ void handleDelete() {
   // 2つ目の'/'が存在する場合はサブディレクトリ指定とみなす
   if (path.indexOf('/', 1) != -1) {
     server.send(400, "text/plain", "Bad Request: only files in root directory can be deleted");
+    return;
+  }
+
+  // ロギング中のファイル削除を防止 (Issue #9)
+  if (isLogging && path == currentLogFile) {
+    server.send(409, "text/plain", "Conflict: file is currently being recorded");
     return;
   }
 
