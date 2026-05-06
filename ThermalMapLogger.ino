@@ -1,7 +1,7 @@
 /**
  * ============================================================
  *  06_ThermalMapLogger.ino
- *  Thermal Mapper v13.4 / Build 137
+ *  Thermal Mapper v13.4 / Build 139
  * ============================================================
  *
  *  【概要】
@@ -73,7 +73,7 @@ const char *wokwiSsid = "Wokwi-GUEST";          // Wokwi仮想Wi-Fi。パスワ�
 
 const char *APP_NAME    = "Thermal Mapper";
 const char *APP_VERSION = "v13.4";
-const char *APP_BUILD   = "Build 138";
+const char *APP_BUILD   = "Build 139";
 
 // ============================================================
 //  AMG8833 センサーオブジェクト
@@ -132,7 +132,7 @@ const int SPI_SD_CS_PIN = 5;  // Wokwi microSD(SPI)用CS。実機SD_MMC成功時
 // ============================================================
 const char INDEX_HTML[] PROGMEM = R"=====(
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thermal Mapper v13.4 - Build 137</title>
+<title>Thermal Mapper v13.4 - Build 139</title>
 <style>
   body { font-family: sans-serif; text-align: center; background: #121212; color: #eee; margin:0; padding:8px; }
   h3 { color: #4db6ac; margin: 4px 0 8px; }
@@ -161,8 +161,8 @@ const char INDEX_HTML[] PROGMEM = R"=====(
 </style>
 </head>
 <body onload="initApp()">
-  <h3>Thermal Mapper [Grid: 11-88] 137</h3>
-  <div class="app-meta"><span>v13.4 / Build 137</span><button id="aboutBtn" onclick="showAbout()">About</button></div>
+  <h3>Thermal Mapper [Grid: 11-88] 139</h3>
+  <div class="app-meta"><span>v13.4 / Build 139</span><button id="aboutBtn" onclick="showAbout()">About</button></div>
   <div id="grid"></div>
   <div class="controls"><button id="logBtn" onclick="toggleLogging()">Start Logging</button></div>
   <div id="status">Syncing Time...</div>
@@ -171,7 +171,7 @@ const char INDEX_HTML[] PROGMEM = R"=====(
     <h4>Thermal Mapper</h4>
     <dl>
       <dt>Version</dt><dd>v13.4</dd>
-      <dt>Build</dt><dd>Build 137</dd>
+      <dt>Build</dt><dd>Build 139</dd>
       <dt>HTTP</dt><dd>/version</dd>
     </dl>
     <button onclick="closeAbout()">Close</button>
@@ -240,13 +240,21 @@ const char INDEX_HTML[] PROGMEM = R"=====(
    * "Recording" または "Stopped" が返ってくる
    */
   async function toggleLogging() {
-    const res = await fetch('/toggle?t=' + Date.now());
-    const state = await res.text(); // "Recording" or "Stopped"
     const btn = document.getElementById('logBtn');
-    // ボタンのラベルと色をロギング状態に合わせて切り替え
-    btn.innerText = state.includes("Recording") ? "Stop Logging" : "Start Logging";
-    btn.style.background = state.includes("Recording") ? "#555" : "#00897b";
-    updateList(); // 新しいファイルが作成されたので一覧を更新
+    if (btn.disabled) return;
+    btn.disabled = true; // 二重送信防止
+    try {
+      const res = await fetch('/toggle?t=' + Date.now());
+      const state = await res.text(); // "Recording" or "Stopped"
+      // ボタンのラベルと色をロギング状態に合わせて切り替え
+      btn.innerText = state.includes("Recording") ? "Stop Logging" : "Start Logging";
+      btn.style.background = state.includes("Recording") ? "#555" : "#00897b";
+      updateList(); // 新しいファイルが作成されたので一覧を更新
+    } catch(e) {
+      alert("Failed to toggle logging");
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   /**
@@ -255,24 +263,37 @@ const char INDEX_HTML[] PROGMEM = R"=====(
    * 各ファイルにダウンロードリンクと削除ボタンを付与
    */
   async function updateList() {
-    const res = await fetch('/list?t=' + Date.now());
-    const files = await res.json(); // ["20250101_120000.csv", ...] の配列
-    const cont = document.getElementById('listContent');
-    cont.innerHTML = '';
-    files.reverse().forEach(f => { // 新しいファイルを先頭に
-      cont.innerHTML += `<div class="file-item"><a href="/download?file=${f}" download>${f}</a><button class="del-btn" onclick="deleteFile('${f}')">Delete</button></div>`;
-    });
+    try {
+      const res = await fetch('/list?t=' + Date.now());
+      if (!res.ok) throw new Error();
+      const files = await res.json(); // ["20250101_120000.csv", ...] の配列
+      const cont = document.getElementById('listContent');
+      cont.innerHTML = '';
+      files.reverse().forEach(f => { // 新しいファイルを先頭に
+        cont.innerHTML += `<div class="file-item"><a href="/download?file=${f}" download>${f}</a><button class="del-btn" onclick="deleteFile(this, '${f}')">Delete</button></div>`;
+      });
+    } catch(e) {
+      document.getElementById('listContent').innerHTML = '<div style="color:#ff5252; font-size:12px;">SD not available</div>';
+    }
   }
 
   /**
    * 指定ファイルを削除する
    * confirm()で確認後、/delete を叩いてファイルを消去
+   * @param {HTMLElement} btn - 押されたボタン要素
    * @param {string} f - 削除するファイル名
    */
-  async function deleteFile(f) {
+  async function deleteFile(btn, f) {
+    if (btn.disabled) return;
     if(confirm(`Delete ${f}?`)) {
-      await fetch(`/delete?file=${f}&t=` + Date.now());
-      updateList(); // 削除後に一覧を再取得
+      btn.disabled = true; // 二重送信防止
+      try {
+        await fetch(`/delete?file=${f}&t=` + Date.now());
+        updateList(); // 削除後に一覧を再取得
+      } catch(e) {
+        alert("Failed to delete file");
+        btn.disabled = false;
+      }
     }
   }
 
@@ -422,16 +443,14 @@ void handleSync() {
 //    例: 11=1行1列(左上), 18=1行8列(右上), 88=8行8列(右下)
 // ============================================================
 void handleToggle() {
+  if (!sdAvailable) {
+    server.send(503, "text/plain", "SD not available");
+    return;
+  }
+
   isLogging = !isLogging; // フラグを反転
 
   if(isLogging) {
-    // SDカードが使えない場合はロギングを開始しない
-    if (!sdAvailable) {
-      isLogging = false;
-      server.send(503, "text/plain", "SD not available");
-      return;
-    }
-
     // 時刻未同期チェック: /sync が届いていない場合は1970年になるため拒否
     if (!g_timeSynced) {
       isLogging = false;
@@ -495,6 +514,10 @@ void handleToggle() {
 //  レスポンス例: ["20250101_120000.csv","20250101_130000.csv"]
 // ============================================================
 void handleList() {
+  if (!sdAvailable) {
+    server.send(503, "text/plain", "SD not available");
+    return;
+  }
   String json = "[";
   File root = storageFs->open("/");      // ルートディレクトリを開く
   File file = root.openNextFile();        // 最初のファイルを取得
@@ -523,6 +546,10 @@ void handleList() {
 //    file = ダウンロードするファイルパス (例: /20250101_120000.csv)
 // ============================================================
 void handleDownload() {
+  if (!sdAvailable) {
+    server.send(503, "text/plain", "SD not available");
+    return;
+  }
   String path = server.arg("file");
   if(!path.startsWith("/")) path = "/" + path; // 先頭スラッシュを保証
 
@@ -546,6 +573,10 @@ void handleDownload() {
 //    file = 削除するファイルパス (例: /20250101_120000.csv)
 // ============================================================
 void handleDelete() {
+  if (!sdAvailable) {
+    server.send(503, "text/plain", "SD not available");
+    return;
+  }
   String path = server.arg("file");
 
   // 先頭スラッシュを保証
