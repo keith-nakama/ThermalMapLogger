@@ -1,7 +1,7 @@
 /**
  * ============================================================
  *  06_ThermalMapLogger.ino
- *  Thermal Mapper v13.4 / Build 139
+ *  Thermal Mapper v13.4 / Build 140
  * ============================================================
  *
  *  【概要】
@@ -73,7 +73,7 @@ const char *wokwiSsid = "Wokwi-GUEST";          // Wokwi仮想Wi-Fi。パスワ�
 
 const char *APP_NAME    = "Thermal Mapper";
 const char *APP_VERSION = "v13.4";
-const char *APP_BUILD   = "Build 139";
+const char *APP_BUILD   = "Build 140";
 
 // ============================================================
 //  AMG8833 センサーオブジェクト
@@ -132,7 +132,7 @@ const int SPI_SD_CS_PIN = 5;  // Wokwi microSD(SPI)用CS。実機SD_MMC成功時
 // ============================================================
 const char INDEX_HTML[] PROGMEM = R"=====(
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thermal Mapper v13.4 - Build 139</title>
+<title>Thermal Mapper v13.4 - Build 140</title>
 <style>
   body { font-family: sans-serif; text-align: center; background: #121212; color: #eee; margin:0; padding:8px; }
   h3 { color: #4db6ac; margin: 4px 0 8px; }
@@ -161,8 +161,8 @@ const char INDEX_HTML[] PROGMEM = R"=====(
 </style>
 </head>
 <body onload="initApp()">
-  <h3>Thermal Mapper [Grid: 11-88] 139</h3>
-  <div class="app-meta"><span>v13.4 / Build 139</span><button id="aboutBtn" onclick="showAbout()">About</button></div>
+  <h3>Thermal Mapper [Grid: 11-88] 140</h3>
+  <div class="app-meta"><span>v13.4 / Build 140</span><button id="aboutBtn" onclick="showAbout()">About</button></div>
   <div id="grid"></div>
   <div class="controls"><button id="logBtn" onclick="toggleLogging()">Start Logging</button></div>
   <div id="status">Syncing Time...</div>
@@ -171,7 +171,7 @@ const char INDEX_HTML[] PROGMEM = R"=====(
     <h4>Thermal Mapper</h4>
     <dl>
       <dt>Version</dt><dd>v13.4</dd>
-      <dt>Build</dt><dd>Build 139</dd>
+      <dt>Build</dt><dd>Build 140</dd>
       <dt>HTTP</dt><dd>/version</dd>
     </dl>
     <button onclick="closeAbout()">Close</button>
@@ -422,6 +422,8 @@ void handleSync() {
     g_syncMillis  = millis();
     g_timeSynced  = true;
     server.send(200, "text/plain", "OK");
+  } else {
+    server.send(400, "text/plain", "Bad Request: missing 'now' parameter");
   }
 }
 
