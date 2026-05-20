@@ -233,19 +233,25 @@ datetime, 11, 12, 13, 14, 15, 16, 17, 18, 21, ... , 88
 
 | バージョン | 内容 |
 |-----------|------|
-| v13.4 | 安定性向上・安全ガード・ドキュメント更新（Build 138〜142） |
+| v13.4 (Build 144) | 安定性向上・安全ガード・ドキュメント更新 (Build 138〜144) |
+| v13.4 (Build 134) | バージョン確認表示・About表示・/versionエンドポイントを追加 |
 | v13.3 | バグ修正（Issue #8対応） |
 | v13.2 | バグ修正・安定性改善（Issue #1〜#6 全対応） |
 | v13.1 | 初版リリース |
 
-### v13.4 変更詳細
+### Build 138〜144 変更詳細 (安定性向上・安全ガード)
 
 - **Build 142**: README に活用例（モータースポーツ、基板診断、タイムラプス等）を追加。
 - **Build 141**: ロギング中ファイルのダウンロード防止ガードを実装（[#13](https://github.com/keith-nakama/ThermalMapLogger/issues/13)）。
 - **Build 140**: `/sync` パラメータ欠落時のタイムアウト問題を修正（[#11](https://github.com/keith-nakama/ThermalMapLogger/issues/11)）。
 - **Build 139**: SD未初期化時のハンドラ保護（503エラー）およびブラウザ二重送信防止を実装（[#10](https://github.com/keith-nakama/ThermalMapLogger/issues/10)）。
 - **Build 138**: ロギング中のファイル削除防止ガードを実装（[#9](https://github.com/keith-nakama/ThermalMapLogger/issues/9)）。
-- **Build 134**: バージョン確認表示・About表示・`/version` エンドポイントを追加。
+
+### v13.4 (Build 134) 変更詳細
+
+- 画面上部に `v13.4 / Build 134` を常時表示
+- `About` ボタンでバージョン・ビルド番号・確認用エンドポイントを表示
+- `/version` エンドポイントで `name`、`version`、`build` をJSON返却
 
 ### v13.3 変更詳細
 
